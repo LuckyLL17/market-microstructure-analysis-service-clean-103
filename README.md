@@ -35,6 +35,8 @@ POST /api/replay/sessions/:id/run
 GET  /api/analytics/:symbol
 POST /api/sandbox/orders
 POST /api/sandbox/cancel
+GET  /api/sandbox/strategies/:strategyId/orders            # 活动订单（含部分成交），可按 symbol/status 过滤
+GET  /api/sandbox/strategies/:strategyId/orders/:orderId   # 单笔订单状态
 GET  /api/sandbox/strategies/:strategyId/performance
 GET  /api/sandbox/strategies/:strategyId/events
 GET  /api/anomalies
@@ -42,3 +44,13 @@ GET  /api/metrics
 ```
 
 所有数据默认存储在内存中，适合作为后端业务原型和后续接入 PostgreSQL、TimescaleDB、Kafka/NATS 的基础。
+
+## 沙盒订单生命周期
+
+订单状态机：`active → partially_filled → filled`，或任意活动状态 → `cancelled`（用户撤单 / `unfilled_market`），风控拒绝为 `rejected`。
+
+- 下单即冻结资源：买单按 `价格 × 数量 × (1 + 费率)` 冻结现金，卖单冻结对应标的的可卖数量；成交按成交量逐笔释放，撤单只释放剩余部分。
+- 风控检查纳入未结订单：买单可用资金为 `现金 - 未结买单冻结`，卖单可卖数量为 `持仓 - 未结卖单冻结`。
+- 重复撤单返回 `409 ORDER_NOT_ACTIVE`，不重复释放占用；跨策略撤单/查单返回 `403` / `404`，策略间互不可见。
+- 市价单未成交量立即按 `cancelled / unfilled_market` 撤销并释放占用。
+- performance 区分 `realized`（已终结订单的成交）与 `open`（活动/部分成交订单的影响、剩余量、占用）。

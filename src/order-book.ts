@@ -33,14 +33,24 @@ export class OrderBook {
     queue.push(order); levels.set(order.price, queue);
   }
 
-  cancel(orderId: string): boolean {
+  cancel(orderId: string): BookOrder | null {
     for (const levels of [this.bids, this.asks]) {
       for (const [price, queue] of levels) {
         const index = queue.findIndex(order => order.id === orderId);
-        if (index >= 0) { queue.splice(index, 1); if (!queue.length) levels.delete(price); return true; }
+        if (index >= 0) { const [removed] = queue.splice(index, 1); if (!queue.length) levels.delete(price); return removed; }
       }
     }
-    return false;
+    return null;
+  }
+
+  restingOrder(orderId: string): BookOrder | undefined {
+    for (const levels of [this.bids, this.asks]) {
+      for (const queue of levels.values()) {
+        const found = queue.find(order => order.id === orderId);
+        if (found) return found;
+      }
+    }
+    return undefined;
   }
 
   execute(order: BookOrder, timestamp: string): Fill[] {
@@ -56,6 +66,8 @@ export class OrderBook {
         const quantity = Math.min(remaining, resting.remaining);
         resting.remaining -= quantity; remaining -= quantity;
         fills.push({ orderId: order.id, symbol: this.symbol, side: order.side, price, quantity, timestamp, liquidity: 'taker', fee: +(price * quantity * 0.00025).toFixed(4), strategyId: order.owner });
+        // 挂在簿中的策略订单被动成交时，回报一笔 maker 成交
+        if (resting.owner) fills.push({ orderId: resting.id, symbol: this.symbol, side: resting.side, price, quantity, timestamp, liquidity: 'maker', fee: +(price * quantity * 0.0001).toFixed(4), strategyId: resting.owner });
         if (resting.remaining <= 0) queue.shift();
       }
       if (!queue.length) opposite.delete(price);

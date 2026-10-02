@@ -20,6 +20,26 @@ export type MarketEvent = {
 
 export type PriceLevel = { price: number; quantity: number };
 export type BookOrder = { id: string; side: Side; price: number; quantity: number; remaining: number; sequence: number; owner?: string; type?: OrderType };
+export type OrderStatus = 'active' | 'partially_filled' | 'filled' | 'cancelled' | 'rejected';
+export type SandboxOrder = {
+  id: string;
+  strategyId: string;
+  symbol: string;
+  side: Side;
+  orderType: OrderType;
+  price: number;
+  quantity: number;
+  remaining: number;
+  filledQuantity: number;
+  averageFillPrice: number;
+  status: OrderStatus;
+  cancelReason?: 'user' | 'unfilled_market';
+  reservedCash: number;
+  reservedPosition: number;
+  createdAt: string;
+  updatedAt: string;
+  sequence: number;
+};
 export type Fill = { orderId: string; symbol: string; side: Side; price: number; quantity: number; timestamp: string; liquidity: 'maker' | 'taker'; fee: number; strategyId?: string };
 export type Analytics = {
   symbol: string;
