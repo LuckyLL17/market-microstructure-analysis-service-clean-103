@@ -10,7 +10,8 @@ export class OrderBook {
 
   constructor(public readonly symbol: string) {}
 
-  apply(event: MarketEvent): void {
+  apply(event: MarketEvent): Fill[] {
+    const fills: Fill[] = [];
     this.lastTimestamp = event.timestamp;
     this.lastSequence = Math.max(this.lastSequence, event.sequence);
     if (event.type === 'snapshot') {
@@ -18,13 +19,25 @@ export class OrderBook {
       for (const level of event.bids ?? []) this.seedLevel('buy', level, event.sequence);
       for (const level of event.asks ?? []) this.seedLevel('sell', level, event.sequence);
     } else if (event.type === 'new_order' && event.orderId && event.side && event.price && event.quantity) {
-      this.execute({ id: event.orderId, side: event.side, price: event.price, quantity: event.quantity, remaining: event.quantity, sequence: event.sequence, type: 'limit' }, event.timestamp);
+      fills.push(...this.execute({ id: event.orderId, side: event.side, price: event.price, quantity: event.quantity, remaining: event.quantity, sequence: event.sequence, type: 'limit' }, event.timestamp));
     } else if (event.type === 'cancel_order' && event.orderId) {
       this.cancel(event.orderId);
     } else if (event.type === 'trade' && event.price && event.quantity) {
-      this.consume(event.aggressorSide ?? 'buy', event.quantity);
+      fills.push(...this.consume(event.aggressorSide ?? 'buy', event.quantity, event.timestamp));
       this.tradeCount += 1; this.tradedQuantity += event.quantity;
     }
+    return fills;
+  }
+
+  /**
+   * 从对手盘（沙盒策略挂单）成交时产生 maker 成交回报，
+   * 使挂单的成交能够进入资金/持仓结算并释放对应占用。
+   * 行情种子订单（无 owner）只消耗深度，不产生成交。
+   */
+  private restingFill(resting: BookOrder, aggressorSide: Side, price: number, quantity: number, timestamp: string): Fill[] {
+    if (!resting.owner) return [];
+    const side = aggressorSide === 'buy' ? 'sell' : 'buy';
+    return [{ orderId: resting.id, symbol: this.symbol, side, price, quantity, timestamp, liquidity: 'maker', fee: +(price * quantity * 0.00025).toFixed(4), strategyId: resting.owner }];
   }
 
   add(order: BookOrder): void {
@@ -56,6 +69,7 @@ export class OrderBook {
         const quantity = Math.min(remaining, resting.remaining);
         resting.remaining -= quantity; remaining -= quantity;
         fills.push({ orderId: order.id, symbol: this.symbol, side: order.side, price, quantity, timestamp, liquidity: 'taker', fee: +(price * quantity * 0.00025).toFixed(4), strategyId: order.owner });
+        fills.push(...this.restingFill(resting, order.side, price, quantity, timestamp));
         if (resting.remaining <= 0) queue.shift();
       }
       if (!queue.length) opposite.delete(price);
@@ -66,15 +80,22 @@ export class OrderBook {
     return fills;
   }
 
-  consume(aggressor: Side, quantity: number): void {
+  consume(aggressor: Side, quantity: number, timestamp = new Date().toISOString()): Fill[] {
+    const fills: Fill[] = [];
     const levels = aggressor === 'buy' ? this.asks : this.bids;
     let remaining = quantity;
     const prices = [...levels.keys()].sort((a, b) => aggressor === 'buy' ? a - b : b - a);
     for (const price of prices) {
       const queue = levels.get(price) ?? [];
-      while (queue.length && remaining > 0) { const item = queue[0]; const used = Math.min(remaining, item.remaining); item.remaining -= used; remaining -= used; if (item.remaining <= 0) queue.shift(); }
+      while (queue.length && remaining > 0) {
+        const item = queue[0]; const used = Math.min(remaining, item.remaining);
+        item.remaining -= used; remaining -= used;
+        fills.push(...this.restingFill(item, aggressor, price, used, timestamp));
+        if (item.remaining <= 0) queue.shift();
+      }
       if (!queue.length) levels.delete(price); if (remaining <= 0) break;
     }
+    return fills;
   }
 
   snapshot(depth = 10): { bids: PriceLevel[]; asks: PriceLevel[]; sequence: number; timestamp: string } {

@@ -35,6 +35,7 @@ POST /api/replay/sessions/:id/run
 GET  /api/analytics/:symbol
 POST /api/sandbox/orders
 POST /api/sandbox/cancel
+GET  /api/sandbox/strategies/:strategyId/orders
 GET  /api/sandbox/strategies/:strategyId/performance
 GET  /api/sandbox/strategies/:strategyId/events
 GET  /api/anomalies

@@ -1,5 +1,6 @@
 export type Side = 'buy' | 'sell';
 export type OrderType = 'limit' | 'market';
+export type OrderStatus = 'new' | 'partially_filled' | 'filled' | 'cancelled' | 'rejected';
 export type EventType = 'snapshot' | 'new_order' | 'cancel_order' | 'trade' | 'quote';
 
 export type MarketEvent = {
@@ -20,6 +21,28 @@ export type MarketEvent = {
 
 export type PriceLevel = { price: number; quantity: number };
 export type BookOrder = { id: string; side: Side; price: number; quantity: number; remaining: number; sequence: number; owner?: string; type?: OrderType };
+export type SandboxOrder = {
+  id: string;
+  strategyId: string;
+  symbol: string;
+  side: Side;
+  type: OrderType;
+  price: number;
+  quantity: number;
+  remaining: number;
+  filledQuantity: number;
+  status: OrderStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+export type OrderView = SandboxOrder & {
+  averageFilledPrice: number | null;
+  fees: number;
+  /** 当前仍被该单未成交部分占用的资金（买单）/ 可卖数量（卖单） */
+  reservedCash: number;
+  reservedQuantity: number;
+  active: boolean;
+};
 export type Fill = { orderId: string; symbol: string; side: Side; price: number; quantity: number; timestamp: string; liquidity: 'maker' | 'taker'; fee: number; strategyId?: string };
 export type Analytics = {
   symbol: string;
